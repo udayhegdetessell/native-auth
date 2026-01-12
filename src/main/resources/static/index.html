@@ -17,13 +17,28 @@
                     <path d="M2 17l10 5 10-5"/>
                     <path d="M2 12l10 5 10-5"/>
                 </svg>
-                <span>Entra Native Auth</span>
+                <span>Entra Native Auth + Hybrid Auth</span>
             </div>
             <div class="user-info" id="userInfo" style="display: none;">
                 <span id="userEmail"></span>
                 <button class="btn-logout" onclick="logout()">Logout</button>
             </div>
         </header>
+
+        <!-- Info Banner -->
+        <div class="info-banner">
+            <div class="info-content">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="12" y1="16" x2="12" y2="12"/>
+                    <line x1="12" y1="8" x2="12.01" y2="8"/>
+                </svg>
+                <div>
+                    <strong>Hybrid Authentication Implementation</strong>
+                    <p>This POC combines Microsoft Entra Native Auth (OTP-based) with password-based authentication. Password hashes are securely stored using <strong>Microsoft Graph Open Extensions</strong> (no SharePoint license required).</p>
+                </div>
+            </div>
+        </div>
 
         <!-- Main Content -->
         <main class="main-content">
@@ -67,7 +82,14 @@
                     <div class="card">
                         <h2>Create Account</h2>
                         <p class="subtitle">Start your journey with us</p>
-                        
+
+                        <div class="info-note">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                            </svg>
+                            <span>Your password is securely hashed with BCrypt and stored in Microsoft Graph Open Extensions</span>
+                        </div>
+
                         <!-- Step 1: Email & Password -->
                         <div id="signupStep1">
                             <form id="signupStartForm" onsubmit="handleSignupStart(event)">
@@ -162,7 +184,30 @@
                     <div class="card wide">
                         <h2>User Management</h2>
                         <p class="subtitle">Manage users via Graph API</p>
-                        
+
+                        <!-- Technical Details -->
+                        <div class="tech-details">
+                            <h3>🔧 Implementation Details</h3>
+                            <div class="tech-grid">
+                                <div class="tech-item">
+                                    <strong>Password Storage</strong>
+                                    <p>BCrypt hashed passwords stored in Microsoft Graph Open Extensions</p>
+                                </div>
+                                <div class="tech-item">
+                                    <strong>Extension Name</strong>
+                                    <p><code>com.tessell.auth</code></p>
+                                </div>
+                                <div class="tech-item">
+                                    <strong>No License Required</strong>
+                                    <p>Works with basic Microsoft Entra External ID (no SharePoint needed)</p>
+                                </div>
+                                <div class="tech-item">
+                                    <strong>Authentication Flow</strong>
+                                    <p>Native Auth (OTP) for signup + Password-based signin</p>
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="user-actions">
                             <!-- Create User -->
                             <div class="action-section">
