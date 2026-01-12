@@ -251,13 +251,27 @@ public class HybridAuthServiceImpl implements HybridAuthService {
                 }
             }
 
-            // If we couldn't get userId from ID token, try Graph API as fallback
+            // If we couldn't get userId from ID token, try Graph API as fallback with retry
             if (userId == null) {
-                try {
-                    userId = graphApiService.getUserIdByEmail(email);
-                    log.info("Found user ID from Graph API: {} for email: {}", userId, email);
-                } catch (Exception e) {
-                    log.warn("Failed to get user ID from Graph API for email: {}", email, e);
+                int maxRetries = 3;
+                int retryDelayMs = 2000; // 2 seconds
+
+                for (int attempt = 1; attempt <= maxRetries && userId == null; attempt++) {
+                    try {
+                        if (attempt > 1) {
+                            log.info("Retry attempt {} to get user ID from Graph API for email: {}", attempt, email);
+                            Thread.sleep(retryDelayMs);
+                        }
+                        userId = graphApiService.getUserIdByEmail(email);
+                        if (userId != null) {
+                            log.info("Found user ID from Graph API: {} for email: {} (attempt {})", userId, email, attempt);
+                        }
+                    } catch (Exception e) {
+                        log.warn("Attempt {} failed to get user ID from Graph API for email: {}", attempt, email, e);
+                        if (attempt == maxRetries) {
+                            log.error("All {} attempts failed to get user ID from Graph API for email: {}", maxRetries, email);
+                        }
+                    }
                 }
             }
 
