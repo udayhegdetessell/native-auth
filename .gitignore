@@ -35,3 +35,14 @@ out/
 
 ### VS Code ###
 .vscode/
+
+### Environment Variables ###
+.env
+.env.local
+.env.*.local
+*.env
+
+### Application Configuration with Secrets ###
+src/main/resources/application.yml
+src/main/resources/application-*.yml
+!src/main/resources/application.yml.template
