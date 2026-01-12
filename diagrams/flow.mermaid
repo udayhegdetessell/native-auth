@@ -1,0 +1,54 @@
+graph TB
+    Start([User Starts]) --> Choice{New User?}
+
+    Choice -->|Yes| SignUpStart[Sign-Up Start<br/>POST /signup/start<br/>email + password]
+    Choice -->|No| SignIn[Sign-In<br/>POST /signin<br/>email + password]
+
+    SignUpStart --> NativeAuth[Entra Native Auth<br/>Sends OTP to Email]
+    NativeAuth --> EmailOTP[User Receives<br/>8-digit OTP]
+    EmailOTP --> SignUpComplete[Sign-Up Complete<br/>POST /signup/complete<br/>token + OTP + displayName]
+
+    SignUpComplete --> VerifyOTP{OTP Valid?}
+    VerifyOTP -->|No| Error1[Error: Invalid OTP]
+    VerifyOTP -->|Yes| CreateUser[Create User in Entra]
+
+    CreateUser --> HashPwd[Hash Password<br/>BCrypt cost=12]
+    HashPwd --> StoreHash[Store Hash in<br/>Graph Open Extension<br/>com.tessell.auth]
+    StoreHash --> GenToken1[Generate JWT Token<br/>30-day lifetime]
+    GenToken1 --> Success1[Return JWT Token]
+
+    SignIn --> GetUser[Get User from<br/>Microsoft Graph API]
+    GetUser --> UserExists{User Found?}
+    UserExists -->|No| Error2[Error: User Not Found]
+    UserExists -->|Yes| GetHash[Get Password Hash<br/>from Open Extension]
+
+    GetHash --> VerifyPwd{Password<br/>Valid?}
+    VerifyPwd -->|No| Error3[Error: Invalid Credentials]
+    VerifyPwd -->|Yes| GenToken2[Generate JWT Token<br/>30-day lifetime]
+    GenToken2 --> Success2[Return JWT Token]
+
+    Success1 --> UseToken[Use JWT Token<br/>for API Calls]
+    Success2 --> UseToken
+
+    UseToken --> TokenExpired{Token<br/>Expired?}
+    TokenExpired -->|No| APICall[Make API Calls<br/>with Bearer Token]
+    TokenExpired -->|Yes| Refresh[Refresh Token<br/>POST /refresh]
+    Refresh --> NewToken[Get New JWT Token]
+    NewToken --> APICall
+
+    APICall --> End([Authenticated Session])
+
+    Error1 --> End
+    Error2 --> End
+    Error3 --> End
+
+    style Start fill:#e1f5e1
+    style End fill:#e1f5e1
+    style Error1 fill:#ffe1e1
+    style Error2 fill:#ffe1e1
+    style Error3 fill:#ffe1e1
+    style Success1 fill:#e1f0ff
+    style Success2 fill:#e1f0ff
+    style StoreHash fill:#fff4e1
+    style GenToken1 fill:#f0e1ff
+    style GenToken2 fill:#f0e1ff

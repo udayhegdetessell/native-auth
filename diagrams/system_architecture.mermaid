@@ -1,0 +1,79 @@
+graph TB
+    subgraph Client["Client Applications"]
+        WebUI[Web UI<br/>HTML/CSS/JS]
+        Mobile[Mobile App<br/>iOS/Android]
+        API[API Client<br/>Postman/cURL]
+    end
+
+    subgraph SpringBoot["Spring Boot Application :8080"]
+        subgraph Controllers["Controllers Layer"]
+            HybridCtrl[HybridAuthController<br/>/api/v1/hybrid-auth/*]
+            UserCtrl[UserController<br/>/api/users/*]
+        end
+
+        subgraph Services["Service Layer"]
+            HybridSvc[HybridAuthService<br/>- signUpStart<br/>- signUpComplete<br/>- signIn<br/>- validateToken<br/>- refreshToken]
+            GraphSvc[GraphApiService<br/>- createUser<br/>- getUserByEmail<br/>- updateUserExtension<br/>- getUserExtension]
+        end
+
+        subgraph Security["Security Components"]
+            JWT[JWT Manager<br/>- Generate tokens<br/>- Validate tokens<br/>- HS256 algorithm]
+            BCrypt[BCrypt Manager<br/>- Hash passwords<br/>- Verify passwords<br/>- Cost factor: 12]
+        end
+
+        subgraph Config["Configuration"]
+            AppConfig[application.yml<br/>- Tenant config<br/>- JWT settings<br/>- API endpoints]
+        end
+    end
+
+    subgraph Microsoft["Microsoft Services"]
+        NativeAuth[Entra Native Auth<br/>ciamlogin.com<br/>- OTP generation<br/>- Email delivery<br/>- User creation]
+
+        GraphAPI[Microsoft Graph API<br/>graph.microsoft.com<br/>- User CRUD<br/>- Open Extensions<br/>- User attributes]
+    end
+
+    subgraph Storage["Data Storage"]
+        OpenExt[Open Extensions<br/>com.tessell.auth<br/>- passwordHash<br/>- custom attributes]
+        EntraDB[(Entra User Store<br/>- User profiles<br/>- Account status<br/>- Metadata)]
+    end
+
+    WebUI --> HybridCtrl
+    Mobile --> HybridCtrl
+    API --> HybridCtrl
+
+    WebUI --> UserCtrl
+    Mobile --> UserCtrl
+    API --> UserCtrl
+
+    HybridCtrl --> HybridSvc
+    UserCtrl --> GraphSvc
+
+    HybridSvc --> JWT
+    HybridSvc --> BCrypt
+    HybridSvc --> GraphSvc
+    HybridSvc --> NativeAuth
+
+    GraphSvc --> GraphAPI
+
+    JWT --> AppConfig
+    BCrypt --> AppConfig
+    GraphSvc --> AppConfig
+    HybridSvc --> AppConfig
+
+    GraphAPI --> OpenExt
+    GraphAPI --> EntraDB
+    NativeAuth --> EntraDB
+
+    style WebUI fill:#e1f0ff
+    style Mobile fill:#e1f0ff
+    style API fill:#e1f0ff
+    style HybridCtrl fill:#fff4e1
+    style UserCtrl fill:#fff4e1
+    style HybridSvc fill:#f0e1ff
+    style GraphSvc fill:#f0e1ff
+    style JWT fill:#e1ffe1
+    style BCrypt fill:#e1ffe1
+    style NativeAuth fill:#ffe1f0
+    style GraphAPI fill:#ffe1f0
+    style OpenExt fill:#ffffe1
+    style EntraDB fill:#ffffe1
