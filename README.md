@@ -173,7 +173,6 @@ entra:
     tenant-subdomain: contosocustomersnativeapp  # Your tenant subdomain
     tenant-id: db186b60-1fdd-4899-afd6-b6b2f0286f81  # Your tenant ID
     client-id: bfe55ca6-7c7f-4c6e-8d29-077a3136f98c  # Your client ID
-    client-secret: # Your client secret
     scope: openid profile email offline_access
 
 jwt:
