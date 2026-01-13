@@ -16,6 +16,7 @@ public class EntraExternalIdConfig {
     private String clientId;
     private String clientSecret;
     private String scope;
+    private boolean requireEmailVerification = true; // Default: require OTP verification
     private Urls urls = new Urls();
 
     @Getter

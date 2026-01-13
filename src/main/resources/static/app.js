@@ -9,7 +9,14 @@ let lookupUserEmail = null;
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('DOM loaded');
     initTabs();
+
+    // Delay checkbox init to ensure elements are ready
+    setTimeout(() => {
+        initOtpCheckbox();
+    }, 100);
+
     checkSession();
 });
 
@@ -28,10 +35,44 @@ function switchTab(tabName) {
     // Update tab buttons
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
-    
+
     // Update panels
     document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
     document.getElementById(`${tabName}-panel`).classList.add('active');
+}
+
+// OTP Checkbox Toggle (called directly from HTML)
+function toggleOtpRequirement() {
+    const checkbox = document.getElementById('requireOtpCheckbox');
+    const confirmPasswordGroup = document.getElementById('confirmPasswordGroup');
+    const confirmPasswordInput = document.getElementById('signupPasswordConfirm');
+    const btnText = document.getElementById('signupBtnText');
+
+    console.log('Toggle OTP - Checkbox checked:', checkbox.checked);
+
+    if (checkbox.checked) {
+        // OTP required
+        confirmPasswordGroup.style.display = 'none';
+        confirmPasswordInput.removeAttribute('required');
+        btnText.textContent = 'Send Verification Code';
+        console.log('OTP enabled - Button text:', btnText.textContent);
+    } else {
+        // No OTP - instant signup
+        confirmPasswordGroup.style.display = 'block';
+        confirmPasswordInput.setAttribute('required', 'required');
+        btnText.textContent = 'Create Account';
+        console.log('OTP disabled - Button text:', btnText.textContent);
+    }
+}
+
+// OTP Checkbox Initialization (backup for event listener approach)
+function initOtpCheckbox() {
+    // Initial state check
+    const checkbox = document.getElementById('requireOtpCheckbox');
+    if (checkbox) {
+        console.log('Init OTP checkbox - checked:', checkbox.checked);
+        toggleOtpRequirement();
+    }
 }
 
 // Session Management
@@ -133,34 +174,71 @@ async function handleLogin(event) {
     }
 }
 
-// Sign Up Handlers
-async function handleSignupStart(event) {
+// Unified Sign-Up Handler
+async function handleSignup(event) {
     event.preventDefault();
     const form = event.target;
 
     const email = document.getElementById('signupEmail').value;
     const displayName = document.getElementById('signupDisplayName').value;
     const password = document.getElementById('signupPassword').value;
+    const requireOtp = document.getElementById('requireOtpCheckbox').checked;
+
+    // If OTP not required, validate password confirmation
+    if (!requireOtp) {
+        const passwordConfirm = document.getElementById('signupPasswordConfirm').value;
+        if (password !== passwordConfirm) {
+            showToast('Passwords do not match', 'error');
+            return;
+        }
+    }
 
     setLoading(form, true);
 
     try {
-        const params = new URLSearchParams({
-            email,
-            password
-        });
+        if (requireOtp) {
+            // OTP Flow - Step 1: Send OTP
+            const params = new URLSearchParams({
+                email,
+                password
+            });
 
-        const result = await apiCall(`/api/v1/hybrid-auth/signup/start?${params}`, 'POST');
+            const result = await apiCall(`/api/v1/hybrid-auth/signup/start?${params}`, 'POST');
 
-        if (result.success && result.data) {
-            signupContinuationToken = result.data.continuationToken;
-            // Store displayName for later
-            localStorage.setItem('signupDisplayName', displayName);
-            document.getElementById('signupStep1').style.display = 'none';
-            document.getElementById('signupStep2').style.display = 'block';
-            showToast('📧 Verification code sent to your email!', 'success');
+            if (result.success && result.data) {
+                signupContinuationToken = result.data.continuationToken;
+                localStorage.setItem('signupDisplayName', displayName);
+                document.getElementById('signupForm').style.display = 'none';
+                document.getElementById('signupStep2').style.display = 'block';
+                showToast('📧 Verification code sent to your email!', 'success');
+            } else {
+                showToast(result.message || 'Sign up failed', 'error');
+            }
         } else {
-            showToast(result.message || 'Sign up failed', 'error');
+            // No-OTP Flow - Create account directly
+            const params = new URLSearchParams({
+                email,
+                displayName,
+                password
+            });
+
+            const result = await apiCall(`/api/v1/hybrid-auth/signup/no-otp?${params}`, 'POST');
+
+            if (result.success && result.data) {
+                // Store token and email
+                localStorage.setItem('accessToken', result.data.access_token);
+                localStorage.setItem('userEmail', email);
+                currentUser = { email, token: result.data.access_token };
+
+                showToast('🎉 Account created successfully! You are now logged in.', 'success');
+                showUserInfo(email);
+
+                // Reset form and switch to login
+                form.reset();
+                switchTab('login');
+            } else {
+                showToast(result.message || 'Sign up failed', 'error');
+            }
         }
     } catch (error) {
         showToast('Sign up failed: ' + error.message, 'error');
@@ -204,10 +282,13 @@ async function handleSignupComplete(event) {
 }
 
 function resetSignupForm() {
-    document.getElementById('signupStep1').style.display = 'block';
+    document.getElementById('signupForm').style.display = 'block';
     document.getElementById('signupStep2').style.display = 'none';
-    document.getElementById('signupStartForm').reset();
+    document.getElementById('signupForm').reset();
     document.getElementById('signupCompleteForm').reset();
+    document.getElementById('requireOtpCheckbox').checked = true;
+    document.getElementById('confirmPasswordGroup').style.display = 'none';
+    document.getElementById('signupBtnText').textContent = 'Send Verification Code';
     signupContinuationToken = null;
     localStorage.removeItem('signupDisplayName');
 }
@@ -220,10 +301,10 @@ async function handleResetStart(event) {
     const email = document.getElementById('resetEmail').value;
     
     setLoading(form, true);
-    
+
     try {
-        const result = await apiCall(`/api/auth/password-reset/start?email=${encodeURIComponent(email)}`, 'POST');
-        
+        const result = await apiCall(`/api/v1/hybrid-auth/password-reset/start?email=${encodeURIComponent(email)}`, 'POST');
+
         if (result.success && result.data) {
             resetContinuationToken = result.data.continuationToken;
             document.getElementById('resetStep1').style.display = 'none';
@@ -247,16 +328,16 @@ async function handleResetComplete(event) {
     const newPassword = document.getElementById('newPassword').value;
     
     setLoading(form, true);
-    
+
     try {
         const params = new URLSearchParams({
             continuationToken: resetContinuationToken,
             otp,
             newPassword
         });
-        
-        const result = await apiCall(`/api/auth/password-reset/complete?${params}`, 'POST');
-        
+
+        const result = await apiCall(`/api/v1/hybrid-auth/password-reset/complete?${params}`, 'POST');
+
         if (result.success) {
             showToast('Password reset successful!', 'success');
             // Reset form

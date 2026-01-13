@@ -90,29 +90,56 @@
                             <span>Your password is securely hashed with BCrypt and stored in Microsoft Graph Open Extensions</span>
                         </div>
 
-                        <!-- Step 1: Email & Password -->
-                        <div id="signupStep1">
-                            <form id="signupStartForm" onsubmit="handleSignupStart(event)">
-                                <div class="form-group">
-                                    <label for="signupEmail">Email</label>
-                                    <input type="email" id="signupEmail" placeholder="you@example.com" required>
-                                </div>
-                                <div class="form-group">
-                                    <label for="signupDisplayName">Display Name</label>
-                                    <input type="text" id="signupDisplayName" placeholder="John Doe" required>
-                                </div>
-                                <div class="form-group">
-                                    <label for="signupPassword">Password</label>
-                                    <input type="password" id="signupPassword" placeholder="Min 8 characters" required minlength="8">
-                                </div>
-                                <button type="submit" class="btn-primary">
-                                    <span>Send Verification Code</span>
-                                    <div class="spinner" style="display: none;"></div>
-                                </button>
-                            </form>
-                        </div>
+                        <!-- Unified Sign-Up Form -->
+                        <form id="signupForm" onsubmit="handleSignup(event)">
+                            <div class="form-group">
+                                <label for="signupEmail">Email</label>
+                                <input type="email" id="signupEmail" placeholder="you@example.com" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="signupDisplayName">Display Name</label>
+                                <input type="text" id="signupDisplayName" placeholder="John Doe" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="signupPassword">Password</label>
+                                <input type="password" id="signupPassword" placeholder="Min 8 characters" required minlength="8">
+                            </div>
 
-                        <!-- Step 2: OTP Verification -->
+                            <!-- Email Verification Option -->
+                            <div class="form-group">
+                                <div class="verification-option">
+                                    <label class="verification-toggle">
+                                        <input type="checkbox" id="requireOtpCheckbox" checked onchange="toggleOtpRequirement()">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                    <div class="verification-content">
+                                        <div class="verification-header">
+                                            <svg class="verification-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <path d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                                            </svg>
+                                            <span class="verification-title">Email Verification</span>
+                                            <span class="verification-badge">Recommended</span>
+                                        </div>
+                                        <p class="verification-description">
+                                            Verify your email address with a one-time code for enhanced security
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Confirm Password (shown only when OTP is unchecked) -->
+                            <div class="form-group" id="confirmPasswordGroup" style="display: none;">
+                                <label for="signupPasswordConfirm">Confirm Password</label>
+                                <input type="password" id="signupPasswordConfirm" placeholder="Re-enter password" minlength="8">
+                            </div>
+
+                            <button type="submit" class="btn-primary" id="signupSubmitBtn">
+                                <span id="signupBtnText">Send Verification Code</span>
+                                <div class="spinner" style="display: none;"></div>
+                            </button>
+                        </form>
+
+                        <!-- Step 2: OTP Verification (shown after OTP is sent) -->
                         <div id="signupStep2" style="display: none;">
                             <div class="step-indicator">
                                 <span class="step-badge">Step 2</span>

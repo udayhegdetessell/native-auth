@@ -62,15 +62,15 @@ public class HybridAuthController {
             @RequestParam String continuationToken,
             @RequestParam String otp,
             @RequestParam String displayName) {
-        
+
         log.info("Sign-up complete request");
-        
+
         try {
             TokenResponse tokens = hybridAuthService.signUpComplete(
                 continuationToken, otp, displayName);
-            
+
             return ResponseEntity.ok(ApiResponse.success(tokens));
-            
+
         } catch (Exception e) {
             log.error("Sign-up complete failed", e);
             return ResponseEntity
@@ -78,7 +78,35 @@ public class HybridAuthController {
                 .body(ApiResponse.error(e.getMessage()));
         }
     }
-    
+
+    /**
+     * Sign-up without OTP verification (bypasses email verification)
+     * Creates user directly and returns JWT token
+     *
+     * Use this endpoint when email verification is not required
+     */
+    @PostMapping("/signup/no-otp")
+    public ResponseEntity<ApiResponse> signUpWithoutOtp(
+            @RequestParam String email,
+            @RequestParam String password,
+            @RequestParam(defaultValue = "User") String displayName) {
+
+        log.info("Sign-up without OTP request for email: {}", email);
+
+        try {
+            TokenResponse tokens = hybridAuthService.signUpWithoutOtp(
+                email, password, displayName);
+
+            return ResponseEntity.ok(ApiResponse.success(tokens));
+
+        } catch (Exception e) {
+            log.error("Sign-up without OTP failed for email: {}", email, e);
+            return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponse.error(e.getMessage()));
+        }
+    }
+
     @PostMapping("/signin")
     public ResponseEntity<ApiResponse> signIn(@RequestBody LoginRequest request) {
         log.info("Sign-in request for email: {}", request.getEmail());
@@ -139,6 +167,31 @@ public class HybridAuthController {
     }
     
     /**
+     * TEST ONLY: Delete user by email
+     * This is for testing purposes only
+     *
+     * WARNING: Remove this endpoint in production!
+     */
+    @DeleteMapping("/test/delete-user")
+    public ResponseEntity<ApiResponse> deleteUserForTesting(@RequestParam String email) {
+        try {
+            log.warn("TEST ENDPOINT: Deleting user: {}", email);
+
+            hybridAuthService.deleteUserByEmail(email);
+
+            return ResponseEntity.ok(
+                ApiResponse.success(Map.of("message", "User deleted successfully: " + email))
+            );
+
+        } catch (Exception e) {
+            log.error("Failed to delete user: {}", email, e);
+            return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponse.error(e.getMessage()));
+        }
+    }
+
+    /**
      * TEST ONLY: Create user and get token without OTP verification
      * This bypasses email verification for testing purposes
      *
@@ -168,6 +221,59 @@ public class HybridAuthController {
             log.error("Failed to create test user token", e);
             return ResponseEntity.badRequest()
                 .body(ApiResponse.error("Failed to create test user: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Start password reset flow
+     * Sends OTP to user's email for password reset
+     */
+    @PostMapping("/password-reset/start")
+    public ResponseEntity<ApiResponse> passwordResetStart(@RequestParam String email) {
+        log.info("Password reset start request for email: {}", email);
+
+        try {
+            String continuationToken = hybridAuthService.passwordResetStart(email);
+
+            return ResponseEntity.ok(
+                ApiResponse.success(Map.of(
+                    "continuationToken", continuationToken,
+                    "message", "Password reset code sent to your email"
+                ))
+            );
+
+        } catch (Exception e) {
+            log.error("Password reset start failed for email: {}", email, e);
+            return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponse.error(e.getMessage()));
+        }
+    }
+
+    /**
+     * Complete password reset flow
+     * Verifies OTP and updates password
+     */
+    @PostMapping("/password-reset/complete")
+    public ResponseEntity<ApiResponse> passwordResetComplete(
+            @RequestParam String continuationToken,
+            @RequestParam String otp,
+            @RequestParam String newPassword) {
+
+        log.info("Password reset complete request");
+
+        try {
+            hybridAuthService.passwordResetComplete(continuationToken, otp, newPassword);
+
+            return ResponseEntity.ok(
+                ApiResponse.success(Map.of("message", "Password reset successful"))
+            );
+
+        } catch (Exception e) {
+            log.error("Password reset complete failed", e);
+            return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponse.error(e.getMessage()));
         }
     }
 

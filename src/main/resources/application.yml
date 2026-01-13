@@ -20,6 +20,9 @@ entra:
     client-secret: oZj8Q~HTCfTlJg1eZjbDP.vjFrnC6ezb6QN2faLF  # Expires: 7/5/2026
     scope: openid profile email offline_access
 
+    # Email verification settings
+    require-email-verification: false  # Set to true to require OTP verification
+
     # Microsoft API URLs (can be overridden if needed)
     urls:
       native-auth-base: https://{tenantSubdomain}.ciamlogin.com/{tenantSubdomain}.onmicrosoft.com

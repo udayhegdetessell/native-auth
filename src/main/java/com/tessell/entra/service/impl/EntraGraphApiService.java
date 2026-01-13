@@ -71,12 +71,16 @@ public class EntraGraphApiService implements GraphApiService {
      */
     public JsonNode createUser(String email, String displayName, String password) throws IOException {
         String url = config.getGraphApiBaseUrl() + "/users";
-        
+
+        // For Entra External ID, userPrincipalName must use the tenant domain
+        String mailNickname = email.split("@")[0].replaceAll("[^a-zA-Z0-9]", "");
+        String userPrincipalName = mailNickname + "@" + config.getTenantSubdomain() + ".onmicrosoft.com";
+
         ObjectNode body = objectMapper.createObjectNode();
         body.put("accountEnabled", true);
         body.put("displayName", displayName);
-        body.put("mailNickname", email.split("@")[0]);
-        body.put("userPrincipalName", email);
+        body.put("mailNickname", mailNickname);
+        body.put("userPrincipalName", userPrincipalName);
         
         // Password profile
         ObjectNode passwordProfile = objectMapper.createObjectNode();
@@ -118,18 +122,22 @@ public class EntraGraphApiService implements GraphApiService {
      * Get user by email
      */
     public JsonNode getUserByEmail(String email) throws IOException {
-        // Use userPrincipalName filter instead of identities filter
-        // This is simpler and works for email-based sign-in
-        String url = config.getGraphApiBaseUrl() + "/users?$filter=mail eq '" + email + "' or userPrincipalName eq '" + email + "'";
+        // First try to find by identities (for users created via Native Auth or Graph API)
+        String issuer = config.getTenantSubdomain() + ".onmicrosoft.com";
+        String url = config.getGraphApiBaseUrl() + "/users?$filter=identities/any(c:c/issuerAssignedId eq '" + email + "' and c/issuer eq '" + issuer + "')&$select=id,displayName,identities,userPrincipalName,mail";
+
+        log.debug("Searching for user by email: {} with issuer: {}", email, issuer);
 
         Request request = new Request.Builder()
                 .url(url)
                 .get()
                 .addHeader("Authorization", "Bearer " + getAccessToken())
+                .addHeader("ConsistencyLevel", "eventual")
                 .build();
 
         try (Response response = httpClient.newCall(request).execute()) {
             String responseBody = response.body() != null ? response.body().string() : "";
+            log.debug("Get user response: {}", responseBody);
 
             if (!response.isSuccessful()) {
                 throw new RuntimeException("Failed to get user: " + responseBody);
@@ -139,8 +147,37 @@ public class EntraGraphApiService implements GraphApiService {
             JsonNode users = result.get("value");
 
             if (users != null && users.size() > 0) {
+                log.debug("Found user by identities: {}", users.get(0));
                 return users.get(0);
             }
+
+            log.debug("User not found by identities, trying mail/userPrincipalName");
+
+            // Fallback: try by mail or userPrincipalName
+            url = config.getGraphApiBaseUrl() + "/users?$filter=mail eq '" + email + "' or userPrincipalName eq '" + email + "'";
+            request = new Request.Builder()
+                    .url(url)
+                    .get()
+                    .addHeader("Authorization", "Bearer " + getAccessToken())
+                    .build();
+
+            try (Response response2 = httpClient.newCall(request).execute()) {
+                responseBody = response2.body() != null ? response2.body().string() : "";
+
+                if (!response2.isSuccessful()) {
+                    throw new RuntimeException("Failed to get user: " + responseBody);
+                }
+
+                result = objectMapper.readTree(responseBody);
+                users = result.get("value");
+
+                if (users != null && users.size() > 0) {
+                    log.debug("Found user by mail/userPrincipalName: {}", users.get(0));
+                    return users.get(0);
+                }
+            }
+
+            log.debug("User not found: {}", email);
             return null;
         }
     }

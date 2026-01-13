@@ -73,6 +73,10 @@ public class HybridAuthServiceImpl implements HybridAuthService {
     // Key: continuation token, Value: SignUpData (email + password)
     private final Map<String, SignUpData> signUpCache = new ConcurrentHashMap<>();
 
+    // Temporary cache to store email during password reset flow
+    // Key: continuation token, Value: email
+    private final Map<String, String> passwordResetCache = new ConcurrentHashMap<>();
+
     // Inner class to store sign-up data
     private static class SignUpData {
         final String email;
@@ -308,6 +312,67 @@ public class HybridAuthServiceImpl implements HybridAuthService {
     }
 
     @Override
+    public TokenResponse signUpWithoutOtp(String email, String password, String displayName)
+            throws Exception {
+        log.info("Sign-up without OTP for email: {}", email);
+
+        try {
+            // Step 1: Create user directly via Graph API
+            log.info("Creating user via Graph API: {}", email);
+            JsonNode user = graphApiService.createUser(email, displayName, password);
+
+            if (user == null) {
+                throw new Exception("Failed to create user");
+            }
+
+            String userId = user.get("id").asText();
+            log.info("User created successfully with ID: {}", userId);
+
+            // Step 2: Hash password with BCrypt
+            log.info("Hashing password with BCrypt for user: {}", email);
+            String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt(12));
+
+            // Step 3: Store password hash in Graph Open Extension
+            log.info("Storing password hash in Graph Open Extension for user: {}", email);
+            graphApiService.updateUserExtensionAttribute(userId, "passwordHash", passwordHash);
+            log.info("Password hash stored successfully for user: {}", email);
+
+            // Step 4: Generate custom JWT token
+            String jwtToken = generateJwtToken(userId, displayName, email);
+
+            log.info("Sign-up without OTP completed successfully for user: {}", email);
+
+            return TokenResponse.builder()
+                .accessToken(jwtToken)
+                .tokenType("Bearer")
+                .expiresIn(tokenLifetimeDays * 24 * 3600)
+                .build();
+
+        } catch (IOException e) {
+            log.error("Failed to sign up user without OTP: {}", email, e);
+            throw new Exception("Sign-up failed: " + e.getMessage());
+        }
+    }
+
+    public void deleteUserByEmail(String email) throws Exception {
+        log.info("Deleting user by email: {}", email);
+
+        try {
+            String userId = graphApiService.getUserIdByEmail(email);
+            if (userId == null) {
+                throw new Exception("User not found: " + email);
+            }
+
+            graphApiService.deleteUser(userId);
+            log.info("User deleted successfully: {}", email);
+
+        } catch (IOException e) {
+            log.error("Failed to delete user: {}", email, e);
+            throw new Exception("Delete failed: " + e.getMessage());
+        }
+    }
+
+    @Override
     public TokenResponse signIn(LoginRequest request) throws Exception {
         log.info("Signing in user: {}", request.getEmail());
 
@@ -435,21 +500,7 @@ public class HybridAuthServiceImpl implements HybridAuthService {
             .sign(getJwtAlgorithm());
     }
 
-    private String extractEmailFromIdToken(String idToken) {
-        try {
-            DecodedJWT jwt = JWT.decode(idToken);
-            String email = jwt.getClaim("email").asString();
-            if (email == null || email.isEmpty()) {
-                email = jwt.getClaim("preferred_username").asString();
-            }
-            return email != null ? email : "unknown@example.com";
-        } catch (Exception e) {
-            log.warn("Failed to extract email from ID token", e);
-            return "unknown@example.com";
-        }
-    }
-
-    private String extractUserIdFromIdToken(String idToken) {
+  private String extractUserIdFromIdToken(String idToken) {
         try {
             DecodedJWT jwt = JWT.decode(idToken);
             String userId = jwt.getClaim("oid").asString();
@@ -463,17 +514,210 @@ public class HybridAuthServiceImpl implements HybridAuthService {
         }
     }
 
-    private String extractDisplayNameFromIdToken(String idToken) {
+    @Override
+    public String passwordResetStart(String email) throws Exception {
+        log.info("Starting password reset for email: {}", email);
+
         try {
-            DecodedJWT jwt = JWT.decode(idToken);
-            String displayName = jwt.getClaim("name").asString();
-            if (displayName == null || displayName.isEmpty()) {
-                displayName = jwt.getClaim("given_name").asString();
+            // Step 1: Start password reset flow
+            String url = config.getNativeAuthBaseUrl() + "/resetpassword/v1.0/start";
+            String formBody = String.format(
+                "client_id=%s&challenge_type=oob%%20redirect&username=%s",
+                config.getClientId(), email
+            );
+
+            Request request = new Request.Builder()
+                .url(url)
+                .post(RequestBody.create(formBody, FORM_URL_ENCODED))
+                .addHeader("Content-Type", "application/x-www-form-urlencoded")
+                .build();
+
+            NativeAuthResponse response;
+            try (Response httpResponse = httpClient.newCall(request).execute()) {
+                String responseBody = httpResponse.body() != null ? httpResponse.body().string() : "";
+                log.info("Password reset start response: {}", responseBody);
+                response = objectMapper.readValue(responseBody, NativeAuthResponse.class);
             }
-            return displayName != null ? displayName : "User";
-        } catch (Exception e) {
-            log.warn("Failed to extract display name from ID token", e);
-            return "User";
+
+            if (response.getContinuationToken() == null) {
+                throw new Exception("Failed to start password reset: " + response.getError());
+            }
+
+            String continuationToken = response.getContinuationToken();
+
+            // Step 2: Request OTP challenge
+            log.info("Requesting OTP challenge");
+            url = config.getNativeAuthBaseUrl() + "/resetpassword/v1.0/challenge";
+            formBody = String.format(
+                "client_id=%s&challenge_type=oob%%20redirect&continuation_token=%s",
+                config.getClientId(), continuationToken
+            );
+
+            request = new Request.Builder()
+                .url(url)
+                .post(RequestBody.create(formBody, FORM_URL_ENCODED))
+                .addHeader("Content-Type", "application/x-www-form-urlencoded")
+                .build();
+
+            try (Response httpResponse = httpClient.newCall(request).execute()) {
+                String responseBody = httpResponse.body() != null ? httpResponse.body().string() : "";
+                log.info("Password reset challenge response: {}", responseBody);
+                response = objectMapper.readValue(responseBody, NativeAuthResponse.class);
+            }
+
+            if (response.getContinuationToken() == null) {
+                throw new Exception("Failed to request OTP: " + response.getError());
+            }
+
+            String finalContinuationToken = response.getContinuationToken();
+
+            // Store email in cache for later use when updating password hash
+            passwordResetCache.put(finalContinuationToken, email);
+            log.info("Stored email in password reset cache for continuation token");
+
+            log.info("Password reset OTP sent successfully to: {}", email);
+            return finalContinuationToken;
+
+        } catch (IOException e) {
+            log.error("Failed to start password reset for email: {}", email, e);
+            throw new Exception("Failed to start password reset: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public void passwordResetComplete(String continuationToken, String otp, String newPassword)
+            throws Exception {
+        log.info("Completing password reset with OTP");
+
+        // Retrieve email from cache
+        String email = passwordResetCache.get(continuationToken);
+        if (email == null) {
+            throw new Exception("Invalid or expired continuation token");
+        }
+
+        try {
+            // Step 1: Submit OTP
+            log.info("Step 1: Submitting OTP");
+            String url = config.getNativeAuthBaseUrl() + "/resetpassword/v1.0/continue";
+            String formBody = String.format(
+                "client_id=%s&continuation_token=%s&grant_type=oob&oob=%s",
+                config.getClientId(), continuationToken, otp
+            );
+
+            Request request = new Request.Builder()
+                .url(url)
+                .post(RequestBody.create(formBody, FORM_URL_ENCODED))
+                .addHeader("Content-Type", "application/x-www-form-urlencoded")
+                .build();
+
+            NativeAuthResponse otpResponse;
+            try (Response httpResponse = httpClient.newCall(request).execute()) {
+                String responseBody = httpResponse.body() != null ? httpResponse.body().string() : "";
+                log.info("OTP verification response: {}", responseBody);
+                otpResponse = objectMapper.readValue(responseBody, NativeAuthResponse.class);
+            }
+
+            if (otpResponse.getContinuationToken() == null) {
+                throw new Exception("Invalid OTP: " + otpResponse.getError());
+            }
+
+            // Step 2: Submit new password
+            log.info("Step 2: Submitting new password");
+            url = config.getNativeAuthBaseUrl() + "/resetpassword/v1.0/submit";
+            formBody = String.format(
+                "client_id=%s&continuation_token=%s&new_password=%s",
+                config.getClientId(), otpResponse.getContinuationToken(), newPassword
+            );
+
+            request = new Request.Builder()
+                .url(url)
+                .post(RequestBody.create(formBody, FORM_URL_ENCODED))
+                .addHeader("Content-Type", "application/x-www-form-urlencoded")
+                .build();
+
+            NativeAuthResponse submitResponse;
+            try (Response httpResponse = httpClient.newCall(request).execute()) {
+                String responseBody = httpResponse.body() != null ? httpResponse.body().string() : "";
+                log.info("Password submit response: {}", responseBody);
+                submitResponse = objectMapper.readValue(responseBody, NativeAuthResponse.class);
+            }
+
+            if (submitResponse.getContinuationToken() == null) {
+                throw new Exception("Failed to submit password: " + submitResponse.getError());
+            }
+
+            // Step 3: Poll for completion
+            log.info("Step 3: Polling for completion");
+            url = config.getNativeAuthBaseUrl() + "/resetpassword/v1.0/poll_completion";
+            formBody = String.format(
+                "client_id=%s&continuation_token=%s",
+                config.getClientId(), submitResponse.getContinuationToken()
+            );
+
+            request = new Request.Builder()
+                .url(url)
+                .post(RequestBody.create(formBody, FORM_URL_ENCODED))
+                .addHeader("Content-Type", "application/x-www-form-urlencoded")
+                .build();
+
+            // Poll up to 10 times with 2 second intervals
+            for (int i = 0; i < 10; i++) {
+                Thread.sleep(2000); // Wait 2 seconds between polls
+
+                try (Response httpResponse = httpClient.newCall(request).execute()) {
+                    String responseBody = httpResponse.body() != null ? httpResponse.body().string() : "";
+                    log.info("Poll completion response (attempt {}): {}", i + 1, responseBody);
+
+                    JsonNode pollResponse = objectMapper.readTree(responseBody);
+                    String status = pollResponse.has("status") ? pollResponse.get("status").asText() : "";
+
+                    if ("succeeded".equals(status)) {
+                        log.info("Password reset completed successfully in Entra");
+
+                        // Step 4: Update BCrypt hash in user's extension attributes
+                        log.info("Updating BCrypt hash for user: {}", email);
+                        try {
+                            // Get user ID
+                            JsonNode user = graphApiService.getUserByEmail(email);
+                            if (user == null) {
+                                log.error("User not found after password reset: {}", email);
+                                throw new Exception("User not found");
+                            }
+
+                            String userId = user.get("id").asText();
+
+                            // Hash the new password
+                            String newPasswordHash = BCrypt.hashpw(newPassword, BCrypt.gensalt());
+
+                            // Update the password hash in extension attributes
+                            graphApiService.updateUserExtensionAttribute(userId, "passwordHash", newPasswordHash);
+
+                            log.info("BCrypt hash updated successfully for user: {}", email);
+
+                            // Clean up cache
+                            passwordResetCache.remove(continuationToken);
+
+                        } catch (IOException e) {
+                            log.error("Failed to update BCrypt hash for user: {}", email, e);
+                            throw new Exception("Password reset succeeded but failed to update hash: " + e.getMessage());
+                        }
+
+                        return;
+                    } else if ("failed".equals(status)) {
+                        throw new Exception("Password reset failed");
+                    }
+                    // Continue polling if status is "in_progress" or "not_started"
+                }
+            }
+
+            throw new Exception("Password reset timed out");
+
+        } catch (IOException | InterruptedException e) {
+            log.error("Failed to complete password reset", e);
+            throw new Exception("Failed to complete password reset: " + e.getMessage());
+        } finally {
+            // Clean up cache in case of error
+            passwordResetCache.remove(continuationToken);
         }
     }
 
