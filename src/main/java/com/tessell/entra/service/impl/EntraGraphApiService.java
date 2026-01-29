@@ -12,6 +12,8 @@ import okhttp3.*;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 
 @Slf4j
 @Service
@@ -124,7 +126,12 @@ public class EntraGraphApiService implements GraphApiService {
     public JsonNode getUserByEmail(String email) throws IOException {
         // First try to find by identities (for users created via Native Auth or Graph API)
         String issuer = config.getTenantSubdomain() + ".onmicrosoft.com";
-        String url = config.getGraphApiBaseUrl() + "/users?$filter=identities/any(c:c/issuerAssignedId eq '" + email + "' and c/issuer eq '" + issuer + "')&$select=id,displayName,identities,userPrincipalName,mail";
+
+        // URL-encode the email to handle special characters like + (which becomes %2B)
+        // Without encoding, + is interpreted as a space in URLs, causing search failures
+        String encodedEmail = URLEncoder.encode(email, StandardCharsets.UTF_8);
+
+        String url = config.getGraphApiBaseUrl() + "/users?$filter=identities/any(c:c/issuerAssignedId eq '" + encodedEmail + "' and c/issuer eq '" + issuer + "')&$select=id,displayName,identities,userPrincipalName,mail";
 
         log.debug("Searching for user by email: {} with issuer: {}", email, issuer);
 
@@ -153,8 +160,8 @@ public class EntraGraphApiService implements GraphApiService {
 
             log.debug("User not found by identities, trying mail/userPrincipalName");
 
-            // Fallback: try by mail or userPrincipalName
-            url = config.getGraphApiBaseUrl() + "/users?$filter=mail eq '" + email + "' or userPrincipalName eq '" + email + "'";
+            // Fallback: try by mail or userPrincipalName (also use encoded email)
+            url = config.getGraphApiBaseUrl() + "/users?$filter=mail eq '" + encodedEmail + "' or userPrincipalName eq '" + encodedEmail + "'";
             request = new Request.Builder()
                     .url(url)
                     .get()

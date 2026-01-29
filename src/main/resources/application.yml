@@ -3,7 +3,7 @@ spring:
     name: native-auth
 
 server:
-  port: 8080
+  port: 8081
 
 okhttp:
   timeout:
